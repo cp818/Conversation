@@ -4,16 +4,10 @@ const path = require('path');
 const { OpenAI } = require('openai');
 const axios = require('axios');
 
-// ElevenLabs requires a different import approach
-let ElevenLabs;
-try {
-  ElevenLabs = require('elevenlabs');
-} catch (error) {
-  console.error('Error importing ElevenLabs:', error);
-  ElevenLabs = null;
-}
+// Using direct API calls for all external services instead of SDKs
+console.log('[INFO] Using direct API calls for all services');
 
-// Direct API helpers for Deepgram (no SDK)
+// Direct API helpers for external services (no SDKs)
 const deepgramApiHelper = {
   async transcribeAudio(audioBuffer, options = {}) {
     try {
@@ -53,7 +47,58 @@ const deepgramApiHelper = {
       throw error;
     }
   }
-}
+};
+
+// Direct API helper for ElevenLabs
+const elevenLabsApiHelper = {
+  async generateSpeech(text, options = {}) {
+    try {
+      console.log('[DEBUG] Using direct ElevenLabs API call');
+      
+      if (!process.env.ELEVENLABS_API_KEY) {
+        throw new Error('ELEVENLABS_API_KEY is not defined');
+      }
+      
+      const voiceId = options.voiceId || process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL';
+      console.log(`[DEBUG] Using voice ID: ${voiceId}`);
+      
+      const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+      
+      // Prepare the request payload
+      const payload = {
+        text: text,
+        model_id: 'eleven_turbo_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75
+        }
+      };
+      
+      console.log('[DEBUG] Sending TTS request to ElevenLabs with payload:', JSON.stringify(payload).substring(0, 200) + '...');
+      
+      // Make the API request
+      const response = await axios.post(url, payload, {
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg'
+        },
+        responseType: 'arraybuffer' // Important: we want binary data
+      });
+      
+      console.log('[DEBUG] ElevenLabs direct API response status:', response.status);
+      
+      return response.data; // Binary audio data
+    } catch (error) {
+      console.error('[ERROR] ElevenLabs direct API error:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        // Don't log binary response data
+      }
+      throw error;
+    }
+  }
+};
 
 // Initialize Express app
 const app = express();
@@ -102,18 +147,8 @@ if (OPENAI_API_KEY) {
 // We're using direct API calls for Deepgram, no SDK initialization needed
 console.log('[INFO] Using direct Deepgram API calls instead of SDK');
 
-// Initialize ElevenLabs (only if API key is available)
-let elevenLabs = null;
-if (ELEVENLABS_API_KEY && ElevenLabs) {
-  try {
-    elevenLabs = new ElevenLabs({
-      apiKey: ELEVENLABS_API_KEY
-    });
-    console.log('ElevenLabs initialized successfully');
-  } catch (error) {
-    console.error('Error initializing ElevenLabs:', error);
-  }
-}
+// Using direct API calls, no SDK initialization needed
+console.log('[INFO] Using direct ElevenLabs API calls');
 
 // Stats tracking
 const conversationStats = {
@@ -267,9 +302,9 @@ app.post('/api/speech-to-text', async (req, res) => {
 app.post('/api/text-to-speech', async (req, res) => {
   console.log('[DEBUG] Text-to-speech request received');
   
-  // Check if ElevenLabs is available
-  if (!elevenLabs) {
-    console.log('[DEBUG] ElevenLabs service is not initialized');
+  // Check if ElevenLabs API key is available
+  if (!process.env.ELEVENLABS_API_KEY) {
+    console.log('[DEBUG] ELEVENLABS_API_KEY is not set');
     // Return success with null audio to allow the app to continue without TTS
     return res.json({
       success: true,
@@ -279,7 +314,7 @@ app.post('/api/text-to-speech', async (req, res) => {
   }
 
   try {
-    const { text, voiceId = ELEVENLABS_VOICE_ID } = req.body;
+    const { text, voiceId } = req.body;
     console.log(`[DEBUG] Processing TTS request for text: "${text.substring(0, 50)}..."`);
     
     if (!text) {
@@ -289,29 +324,18 @@ app.post('/api/text-to-speech', async (req, res) => {
       });
     }
     
-    // Generate audio using ElevenLabs
-    console.log(`[DEBUG] Using voice ID: ${voiceId}`);
+    // Generate audio using direct ElevenLabs API
+    const options = {
+      voiceId: voiceId || process.env.ELEVENLABS_VOICE_ID
+    };
     
-    // Check method availability
-    if (typeof elevenLabs.textToSpeech !== 'function') {
-      console.error('[ERROR] elevenLabs.textToSpeech is not a function. Available methods:', Object.keys(elevenLabs));
-      throw new Error('Invalid ElevenLabs SDK configuration');
-    }
-    
-    const audioResponse = await elevenLabs.textToSpeech({
-      voice_id: voiceId,
-      text,
-      model_id: 'eleven_turbo_v2',
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75
-      }
-    });
+    // Get audio via direct API
+    const audioBuffer = await elevenLabsApiHelper.generateSpeech(text, options);
     
     console.log('[DEBUG] Successfully received audio response from ElevenLabs');
     
     // Convert the audio to base64
-    const audioBase64 = Buffer.from(audioResponse).toString('base64');
+    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
     
     res.json({
       success: true,
