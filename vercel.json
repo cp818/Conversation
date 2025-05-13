@@ -15,14 +15,20 @@
       "src": "/api/(.*)",
       "dest": "/api/index.js"
     },
+    { 
+      "src": "/styles.css",
+      "dest": "/public/styles.css"
+    },
     {
-      "src": "/public/(.*)",
-      "dest": "/public/$1"
+      "src": "/vercel-script.js",
+      "dest": "/public/vercel-script.js"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
       "dest": "/public/vercel-index.html"
     }
-  ],
-  "outputDirectory": "public"
+  ]
 }
