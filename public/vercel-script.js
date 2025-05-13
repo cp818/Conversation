@@ -599,14 +599,20 @@ async function playAiSpeech(text) {
       console.log('Successfully received audio data, length:', response.audio.length);
       
       // Play the audio
+      console.log('Setting up audio element...');
       const audioElement = document.getElementById('ai-voice');
-      audioElement.src = response.audio;
       
-      // Play and handle completion
-      console.log('Playing audio...');
-      audioElement.play();
+      // Reset the audio element
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      
+      // Set event listeners before setting the source
+      audioElement.onplay = () => {
+        console.log('Audio started playing!');
+      };
+      
       audioElement.onended = () => {
-        console.log('Audio playback ended');
+        console.log('Audio playback ended naturally');
         aiSpeakingIndicator.style.display = 'none';
         appState.isSpeaking = false;
       };
@@ -614,9 +620,45 @@ async function playAiSpeech(text) {
       // If playback fails, still update the UI
       audioElement.onerror = (e) => {
         console.error('Error playing audio:', e);
+        console.error('Audio error code:', audioElement.error ? audioElement.error.code : 'unknown');
         aiSpeakingIndicator.style.display = 'none';
         appState.isSpeaking = false;
       };
+      
+      // Set the src and load it
+      audioElement.src = response.audio;
+      console.log('Audio source set, loading...');
+      audioElement.load();
+      
+      // Try playing after a short delay
+      setTimeout(() => {
+        console.log('Attempting to play audio now...');
+        const playPromise = audioElement.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log('Audio playback started successfully!');
+            })
+            .catch(err => {
+              console.error('Error during audio playback:', err);
+              aiSpeakingIndicator.style.display = 'none';
+              appState.isSpeaking = false;
+              
+              // Show user notification about audio issue
+              const notification = document.createElement('div');
+              notification.className = 'notification warning';
+              notification.innerHTML = `<i class="fas fa-volume-mute"></i> Audio playback failed: ${err.message}`;
+              document.body.appendChild(notification);
+              
+              // Remove notification after 5 seconds
+              setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 500);
+              }, 5000);
+            });
+        }
+      }, 100);
     } else {
       // If speech synthesis fails, update UI
       aiSpeakingIndicator.style.display = 'none';
