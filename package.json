@@ -1,0 +1,54 @@
+{
+  "name": "emma-ai-demo",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "basic": "node basic-server.js",
+    "prod": "node production-server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "emma-ai",
+    "voice",
+    "conversation",
+    "ai",
+    "elevenlabs",
+    "deepgram",
+    "openai",
+    "livekit"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Simple webapp demonstrating Retell AI's real-time conversation capabilities with a basic dashboard",
+  "dependencies": {
+    "@deepgram/sdk": "^4.1.0",
+    "axios": "^1.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "elevenlabs": "^1.58.0",
+    "express": "^5.1.0",
+    "livekit-client": "^2.11.4",
+    "livekit-server-sdk": "^2.13.0",
+    "openai": "^4.98.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.27.1",
+    "@babel/preset-env": "^7.27.2",
+    "@babel/preset-react": "^7.27.1",
+    "babel-loader": "^10.0.0",
+    "concurrently": "^9.1.2",
+    "css-loader": "^7.1.2",
+    "html-webpack-plugin": "^5.6.3",
+    "nodemon": "^3.1.10",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.99.8",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.1"
+  }
+}

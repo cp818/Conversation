@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emma AI Demo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="logo">Emma AI Demo</div>
+      <div class="tagline">Real-time Voice Conversations</div>
+    </header>
+    
+    <div class="main-content">
+      <!-- Dashboard Section -->
+      <div class="sidebar">
+        <div class="stats-container">
+          <h2 class="stats-title">Dashboard</h2>
+          <div class="stat-item">
+            <span class="stat-label">Status:</span>
+            <span class="stat-value" id="connection-status">Disconnected</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Active Conversations:</span>
+            <span class="stat-value" id="active-conversations">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Total Conversations:</span>
+            <span class="stat-value" id="total-conversations">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Total Messages:</span>
+            <span class="stat-value" id="total-messages">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Average Latency:</span>
+            <span class="stat-value" id="avg-latency">0 ms</span>
+          </div>
+        </div>
+
+        <div id="conversation-form" class="user-form">
+          <h3 class="stats-title">Start a Conversation</h3>
+          <input
+            type="text"
+            id="user-name-input"
+            placeholder="Enter your name"
+            required
+          />
+          <button 
+            id="start-conversation-btn" 
+            class="button"
+          >
+            Start Conversation
+          </button>
+        </div>
+
+        <div id="active-conversation" class="user-form" style="display: none;">
+          <h3 class="stats-title">Voice Conversation</h3>
+          <p style="margin-bottom: 1rem; font-size: 0.9rem;">
+            You are speaking as: <strong id="current-user"></strong>
+          </p>
+          <div class="voice-controls">
+            <button id="toggle-mic-btn" class="button voice-button">
+              <i class="fas fa-microphone"></i> Start Speaking
+            </button>
+            <div class="recording-indicator" id="recording-indicator">
+              <div class="pulse-ring"></div>
+              <div class="pulse-dot"></div>
+            </div>
+          </div>
+          <p id="latency-display" class="latency-display"></p>
+          <button 
+            id="end-conversation-btn" 
+            class="button"
+            style="background-color: #dc2626; margin-top: 10px;"
+          >
+            End Conversation
+          </button>
+        </div>
+
+        <div class="prompt-configuration">
+          <h3 class="stats-title">System Prompt</h3>
+          <textarea 
+            id="system-prompt-textarea" 
+            class="system-prompt" 
+            placeholder="Enter the system prompt that defines Emma AI's behavior and personality..."
+            rows="6"
+          ></textarea>
+          <div class="prompt-buttons">
+            <button id="update-prompt-btn" class="button prompt-button">Update Prompt</button>
+            <div class="prompt-toggle">
+              <label class="toggle-label">
+                <input type="checkbox" id="global-prompt-toggle">
+                <span class="toggle-text">Set as global default</span>
+              </label>
+            </div>
+          </div>
+          <p class="prompt-help">
+            <i class="fas fa-info-circle"></i> The system prompt controls how Emma AI behaves and responds.
+          </p>
+        </div>
+        
+        <div class="latency-metrics">
+          <h3 class="stats-title">Latency Metrics</h3>
+          <div class="metrics-container">
+            <div class="metric">
+              <span class="metric-label">STT:</span>
+              <span class="metric-value" id="stt-latency">0 ms</span>
+              <div class="metric-bar-container">
+                <div class="metric-bar stt-bar" id="stt-bar" style="width: 0%"></div>
+              </div>
+            </div>
+            <div class="metric">
+              <span class="metric-label">LLM:</span>
+              <span class="metric-value" id="llm-latency">0 ms</span>
+              <div class="metric-bar-container">
+                <div class="metric-bar llm-bar" id="llm-bar" style="width: 0%"></div>
+              </div>
+            </div>
+            <div class="metric">
+              <span class="metric-label">TTS:</span>
+              <span class="metric-value" id="tts-latency">0 ms</span>
+              <div class="metric-bar-container">
+                <div class="metric-bar tts-bar" id="tts-bar" style="width: 0%"></div>
+              </div>
+            </div>
+            <div class="metric total-metric">
+              <span class="metric-label">Total:</span>
+              <span class="metric-value" id="total-latency">0 ms</span>
+              <div class="metric-bar-container">
+                <div class="metric-bar total-bar" id="total-bar" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="about-section">
+          <h3 class="stats-title">About</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+            This demo showcases Emma AI's real-time voice conversation capabilities.
+          </p>
+          <p style="font-size: 0.9rem;">
+            <i class="fas fa-volume-up"></i> Text-to-Speech: ElevenLabs<br>
+            <i class="fas fa-microphone"></i> Speech-to-Text: Deepgram<br>
+            <i class="fas fa-brain"></i> AI Model: GPT-4o
+          </p>
+        </div>
+      </div>
+      
+      <!-- Chat Section -->
+      <div class="chat-container">
+        <div class="messages-container" id="messages-container">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-state-icon">
+              <i class="fas fa-comments"></i>
+            </div>
+            <div class="empty-state-text">No active conversation</div>
+            <div class="empty-state-subtext">
+              Enter your name and start a conversation from the dashboard to begin speaking with Emma AI.
+            </div>
+          </div>
+          
+          <div id="conversation-messages" style="display: none;">
+            <!-- Messages will be added here dynamically -->
+          </div>
+          
+          <div id="ai-typing" class="ai-typing" style="display: none;">
+            AI is thinking
+            <div class="typing-indicator">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+          </div>
+
+          <div id="ai-speaking" class="ai-speaking" style="display: none;">
+            <i class="fas fa-volume-up"></i> AI is speaking
+          </div>
+        </div>
+        
+        <div class="transcription-container">
+          <div id="transcription-display" class="transcription-display">Speak to start a conversation...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio elements -->
+  <audio id="ai-voice" autoplay></audio>
+  
+  <script src="script.js"></script>
+</body>
+</html>
