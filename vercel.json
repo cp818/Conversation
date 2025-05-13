@@ -16,8 +16,8 @@
       "dest": "/api/index.js"
     },
     { 
-      "src": "/styles.css",
-      "dest": "/public/styles.css"
+      "src": "/vercel-styles.css",
+      "dest": "/public/vercel-styles.css"
     },
     {
       "src": "/vercel-script.js",
