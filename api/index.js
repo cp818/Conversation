@@ -14,6 +14,48 @@ try {
   ElevenLabs = null;
 }
 
+// Direct API helpers for Deepgram (no SDK)
+const deepgramApiHelper = {
+  async transcribeAudio(audioBuffer, options = {}) {
+    try {
+      console.log('[DEBUG] Using direct Deepgram API call');
+      
+      if (!process.env.DEEPGRAM_API_KEY) {
+        throw new Error('DEEPGRAM_API_KEY is not defined');
+      }
+      
+      const url = 'https://api.deepgram.com/v1/listen';
+      
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        model: options.model || 'nova-3',
+        language: options.language || 'en-US',
+        smart_format: 'true',
+        diarize: 'false'
+      }).toString();
+      
+      // Make the API request
+      const response = await axios.post(`${url}?${queryParams}`, audioBuffer, {
+        headers: {
+          'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+          'Content-Type': 'audio/webm'
+        }
+      });
+      
+      console.log('[DEBUG] Deepgram direct API response status:', response.status);
+      
+      return response.data;
+    } catch (error) {
+      console.error('[ERROR] Deepgram direct API error:', error.message);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      throw error;
+    }
+  }
+}
+
 // Initialize Express app
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -169,29 +211,13 @@ app.post('/api/speech-to-text', async (req, res) => {
   // Add direct environment variable check
   console.log('[DEBUG] DEEPGRAM_API_KEY available:', !!process.env.DEEPGRAM_API_KEY);
 
-  // First check if Deepgram is initialized
-  if (!deepgram) {
-    console.log('[DEBUG] Deepgram client not initialized');
-    
-    // Try to initialize it now if we have the API key
-    if (process.env.DEEPGRAM_API_KEY) {
-      try {
-        console.log('[DEBUG] Attempting to initialize Deepgram now');
-        deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
-        console.log('[DEBUG] Deepgram initialized successfully');
-      } catch (initError) {
-        console.error('[ERROR] Failed to initialize Deepgram:', initError);
-      }
-    }
-    
-    // If still not initialized, return error
-    if (!deepgram) {
-      return res.status(200).json({
-        success: false,
-        error: 'Speech-to-text service is unavailable. Please make sure DEEPGRAM_API_KEY is set in environment variables.',
-        mockTranscript: 'This is a fallback response since speech recognition is unavailable. Please type your message instead.'
-      });
-    }
+  if (!process.env.DEEPGRAM_API_KEY) {
+    console.log('[ERROR] Missing DEEPGRAM_API_KEY environment variable');
+    return res.json({
+      success: false,
+      error: 'Speech-to-text service is unavailable. API key not configured.',
+      mockTranscript: 'This is a fallback response since speech recognition is unavailable. Please type your message instead.'
+    });
   }
 
   try {
@@ -216,40 +242,23 @@ app.post('/api/speech-to-text', async (req, res) => {
     const audioBuffer = Buffer.from(audioData[1], 'base64');
     console.log('[DEBUG] Audio buffer created, size:', audioBuffer.length);
     
-    // Check if deepgram.transcription.preRecorded exists
-    if (!deepgram.transcription || typeof deepgram.transcription.preRecorded !== 'function') {
-      console.error('[ERROR] deepgram.transcription.preRecorded is not a function');
-      console.log('[DEBUG] Available deepgram methods:', Object.keys(deepgram));
-      
-      if (deepgram.transcription) {
-        console.log('[DEBUG] Available transcription methods:', Object.keys(deepgram.transcription));
-      }
-      
-      throw new Error('Invalid Deepgram SDK configuration');
-    }
-    
-    // Send to Deepgram for transcription
-    console.log('[DEBUG] Sending audio to Deepgram');
-    const response = await deepgram.transcription.preRecorded(
-      { buffer: audioBuffer, mimetype: 'audio/webm' },
-      { 
-        model: 'nova-3',
-        language: 'en-US',
-        smart_format: true,
-        diarize: false
-      }
-    );
+    // Use direct API call instead of SDK
+    console.log('[DEBUG] Using direct API call to Deepgram');
+    const dgResponse = await deepgramApiHelper.transcribeAudio(audioBuffer, {
+      model: 'nova-3',
+      language: 'en-US'
+    });
     
     console.log('[DEBUG] Received response from Deepgram');
     
     // Extract transcript
-    const transcript = response.results?.channels[0]?.alternatives[0]?.transcript || '';
+    const transcript = dgResponse.results?.channels[0]?.alternatives[0]?.transcript || '';
     console.log('[DEBUG] Transcript:', transcript);
     
     res.json({
       success: true,
       transcript: transcript.trim(),
-      confidence: response.results?.channels[0]?.alternatives[0]?.confidence || 0
+      confidence: dgResponse.results?.channels[0]?.alternatives[0]?.confidence || 0
     });
     
   } catch (error) {
