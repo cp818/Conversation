@@ -9,9 +9,16 @@ const appState = {
   useGlobalPrompt: true,
   defaultSystemPrompt: 'You are Emma AI, a helpful assistant created to have natural conversations. Be helpful, concise, and friendly.',
   latencyMeasurements: {
+    stt: [],
     llm: [],
+    tts: [],
     total: []
-  }
+  },
+  recording: false,
+  audioContext: null,
+  mediaRecorder: null,
+  audioChunks: [],
+  isSpeaking: false
 };
 
 // DOM Elements
@@ -213,6 +220,8 @@ async function sendMessage(text) {
   setAiTyping(true);
   
   try {
+    const startTime = Date.now();
+    
     const data = await fetchWithErrorHandling(`/api/conversation/${appState.conversationId}/message`, {
       method: 'POST',
       body: JSON.stringify({ text })
@@ -227,12 +236,12 @@ async function sendMessage(text) {
     // Update stats
     updateStats(data.stats);
     
+    // Calculate LLM latency
+    const llmLatency = Date.now() - startTime;
+    
     // Update latency measurements
-    if (data.message.latency) {
-      appState.latencyMeasurements.llm.push(data.message.latency);
-      appState.latencyMeasurements.total.push(data.message.latency);
-      updateLatencyDisplay();
-    }
+    appState.latencyMeasurements.llm.push(llmLatency);
+    updateLatencyDisplay();
     
     // Display AI response
     const aiMessageElement = createMessageElement({
@@ -240,11 +249,14 @@ async function sendMessage(text) {
       content: data.message.content,
       timestamp: data.message.timestamp,
       isUser: false,
-      latency: data.message.latency
+      latency: llmLatency
     });
     
     elements.conversationMessages.appendChild(aiMessageElement);
     scrollToBottom();
+    
+    // Convert AI response to speech
+    playAiSpeech(data.message.content);
     
   } catch (error) {
     console.error('Failed to send message:', error);
@@ -362,8 +374,8 @@ async function updateSystemPromptOnServer(prompt, global) {
   }
 }
 
-// Add input field and button for text input (since we're not using voice in this version)
-function setupTextInput() {
+// Setup both text input and voice recording
+function setupInputMethods() {
   // Create text input container
   const textInputContainer = document.createElement('div');
   textInputContainer.className = 'text-input-container';
@@ -405,15 +417,184 @@ function setupTextInput() {
   textInputContainer.appendChild(textInput);
   textInputContainer.appendChild(sendButton);
   
-  // Add to page
+  // Add to page after voice controls
   const conversationControls = document.querySelector('.voice-controls');
-  conversationControls.style.display = 'none'; // Hide voice controls
-  
-  // Insert after conversation controls
   conversationControls.parentNode.insertBefore(textInputContainer, conversationControls.nextSibling);
   
+  // Show voice controls and set up mic button
+  setupVoiceRecording();
+  
   // Update the transcription display text
-  elements.transcriptionDisplay.textContent = 'Type to start a conversation...';
+  elements.transcriptionDisplay.textContent = 'Speak or type to start a conversation...';
+}
+
+// Setup voice recording
+function setupVoiceRecording() {
+  const micButton = elements.toggleMicBtn;
+  const recordingIndicator = document.getElementById('recording-indicator');
+  
+  // Initialize audio context
+  try {
+    appState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (error) {
+    console.error('Failed to create audio context:', error);
+    micButton.disabled = true;
+    micButton.title = 'Voice recording not supported in your browser';
+    return;
+  }
+  
+  // Microphone button click event
+  micButton.addEventListener('click', async () => {
+    if (!appState.recording) {
+      try {
+        // Start recording
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        startRecording(stream);
+        
+        // Update UI
+        micButton.innerHTML = '<i class="fas fa-stop"></i> Stop Speaking';
+        micButton.classList.add('recording');
+        recordingIndicator.style.display = 'block';
+        elements.transcriptionDisplay.textContent = 'Listening...';
+      } catch (error) {
+        console.error('Error accessing microphone:', error);
+        alert('Could not access your microphone. Please check permissions.');
+      }
+    } else {
+      // Stop recording and process audio
+      stopRecording();
+      
+      // Update UI
+      micButton.innerHTML = '<i class="fas fa-microphone"></i> Start Speaking';
+      micButton.classList.remove('recording');
+      recordingIndicator.style.display = 'none';
+      elements.transcriptionDisplay.textContent = 'Processing your speech...';
+    }
+  });
+}
+
+// Start recording audio
+function startRecording(stream) {
+  appState.audioChunks = [];
+  appState.recording = true;
+  
+  const options = { mimeType: 'audio/webm' };
+  appState.mediaRecorder = new MediaRecorder(stream);
+  
+  appState.mediaRecorder.addEventListener('dataavailable', event => {
+    if (event.data.size > 0) appState.audioChunks.push(event.data);
+  });
+  
+  appState.mediaRecorder.addEventListener('stop', processRecording);
+  appState.mediaRecorder.start();
+}
+
+// Stop recording audio
+function stopRecording() {
+  if (appState.mediaRecorder && appState.recording) {
+    appState.recording = false;
+    appState.mediaRecorder.stop();
+  }
+}
+
+// Process recorded audio and send for transcription
+async function processRecording() {
+  try {
+    const startTime = Date.now();
+    
+    // Create blob from audio chunks
+    const audioBlob = new Blob(appState.audioChunks, { type: 'audio/webm' });
+    
+    // Convert to base64
+    const reader = new FileReader();
+    reader.readAsDataURL(audioBlob);
+    reader.onloadend = async () => {
+      const base64Audio = reader.result;
+      
+      // Send to speech-to-text API
+      try {
+        const response = await fetchWithErrorHandling('/api/speech-to-text', {
+          method: 'POST',
+          body: JSON.stringify({ audio: base64Audio })
+        });
+        
+        const sttLatency = Date.now() - startTime;
+        appState.latencyMeasurements.stt.push(sttLatency);
+        
+        // Update transcription display
+        if (response.success && response.transcript) {
+          elements.transcriptionDisplay.textContent = response.transcript;
+          
+          // Send message to AI
+          if (response.transcript.trim()) {
+            sendMessage(response.transcript);
+          } else {
+            elements.transcriptionDisplay.textContent = 'I didn\'t catch that. Please try again.';
+          }
+        } else {
+          elements.transcriptionDisplay.textContent = 'Could not understand audio. Please try again.';
+        }
+      } catch (error) {
+        console.error('Speech-to-text failed:', error);
+        elements.transcriptionDisplay.textContent = 'Speech recognition failed. Please try again or use text input.';
+      }
+    };
+  } catch (error) {
+    console.error('Error processing recording:', error);
+  }
+}
+
+// Play AI response as speech
+async function playAiSpeech(text) {
+  if (!text.trim() || appState.isSpeaking) return;
+  
+  try {
+    // Update UI to show that AI is speaking
+    const aiSpeakingIndicator = document.getElementById('ai-speaking');
+    aiSpeakingIndicator.style.display = 'flex';
+    appState.isSpeaking = true;
+    
+    const startTime = Date.now();
+    
+    // Get speech audio from API
+    const response = await fetchWithErrorHandling('/api/text-to-speech', {
+      method: 'POST',
+      body: JSON.stringify({ text })
+    });
+    
+    const ttsLatency = Date.now() - startTime;
+    appState.latencyMeasurements.tts.push(ttsLatency);
+    
+    if (response.success && response.audio) {
+      // Play the audio
+      const audioElement = document.getElementById('ai-voice');
+      audioElement.src = response.audio;
+      
+      // Play and handle completion
+      audioElement.play();
+      audioElement.onended = () => {
+        aiSpeakingIndicator.style.display = 'none';
+        appState.isSpeaking = false;
+      };
+      
+      // If playback fails, still update the UI
+      audioElement.onerror = () => {
+        console.error('Error playing audio');
+        aiSpeakingIndicator.style.display = 'none';
+        appState.isSpeaking = false;
+      };
+    } else {
+      // If speech synthesis fails, update UI
+      aiSpeakingIndicator.style.display = 'none';
+      appState.isSpeaking = false;
+      console.error('Failed to get speech audio');
+    }
+  } catch (error) {
+    // Reset speaking state on error
+    document.getElementById('ai-speaking').style.display = 'none';
+    appState.isSpeaking = false;
+    console.error('Error playing AI speech:', error);
+  }
 }
 
 // Event Listeners
@@ -421,8 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize app
   initializeApp();
   
-  // Set up text input
-  setupTextInput();
+  // Set up input methods (both text and voice)
+  setupInputMethods();
   
   // Event listeners
   elements.startConversationBtn.addEventListener('click', (e) => {
