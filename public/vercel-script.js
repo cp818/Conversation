@@ -18,7 +18,10 @@ const appState = {
   audioContext: null,
   mediaRecorder: null,
   audioChunks: [],
-  isSpeaking: false
+  isSpeaking: false,
+  userInteracted: false, // Track if user has interacted with the page
+  pendingAudio: null, // Store pending audio that needs to be played after interaction
+  audioQueue: [] // Queue of audio responses to play in sequence
 };
 
 // DOM Elements
@@ -598,67 +601,49 @@ async function playAiSpeech(text) {
     if (response.success && response.audio) {
       console.log('Successfully received audio data, length:', response.audio.length);
       
-      // Play the audio
-      console.log('Setting up audio element...');
-      const audioElement = document.getElementById('ai-voice');
-      
-      // Reset the audio element
-      audioElement.pause();
-      audioElement.currentTime = 0;
-      
-      // Set event listeners before setting the source
-      audioElement.onplay = () => {
-        console.log('Audio started playing!');
-      };
-      
-      audioElement.onended = () => {
-        console.log('Audio playback ended naturally');
-        aiSpeakingIndicator.style.display = 'none';
-        appState.isSpeaking = false;
-      };
-      
-      // If playback fails, still update the UI
-      audioElement.onerror = (e) => {
-        console.error('Error playing audio:', e);
-        console.error('Audio error code:', audioElement.error ? audioElement.error.code : 'unknown');
-        aiSpeakingIndicator.style.display = 'none';
-        appState.isSpeaking = false;
-      };
-      
-      // Set the src and load it
-      audioElement.src = response.audio;
-      console.log('Audio source set, loading...');
-      audioElement.load();
-      
-      // Try playing after a short delay
-      setTimeout(() => {
-        console.log('Attempting to play audio now...');
-        const playPromise = audioElement.play();
+      // If no user interaction yet, show notification and store pending audio
+      if (!appState.userInteracted) {
+        console.log('No user interaction yet, showing notification');
+        appState.pendingAudio = response.audio;
         
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              console.log('Audio playback started successfully!');
-            })
-            .catch(err => {
-              console.error('Error during audio playback:', err);
-              aiSpeakingIndicator.style.display = 'none';
-              appState.isSpeaking = false;
-              
-              // Show user notification about audio issue
-              const notification = document.createElement('div');
-              notification.className = 'notification warning';
-              notification.innerHTML = `<i class="fas fa-volume-mute"></i> Audio playback failed: ${err.message}`;
-              document.body.appendChild(notification);
-              
-              // Remove notification after 5 seconds
-              setTimeout(() => {
-                notification.style.opacity = '0';
-                setTimeout(() => notification.remove(), 500);
-              }, 5000);
-            });
-        }
-      }, 100);
+        // Show notification to user that audio requires interaction
+        const notification = document.createElement('div');
+        notification.className = 'notification info';
+        notification.innerHTML = `
+          <i class="fas fa-volume-up"></i> 
+          <span>Voice is ready but your browser requires interaction first.</span>
+          <button class="play-audio-btn">Click to enable voice</button>
+        `;
+        document.body.appendChild(notification);
+        
+        // Add click event to play the pending audio
+        const playBtn = notification.querySelector('.play-audio-btn');
+        playBtn.addEventListener('click', () => {
+          appState.userInteracted = true;
+          tryPlayAudio(response.audio, aiSpeakingIndicator);
+          notification.style.opacity = '0';
+          setTimeout(() => notification.remove(), 500);
+        });
+        
+        // Remove notification after 10 seconds
+        setTimeout(() => {
+          if (document.body.contains(notification)) {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+              if (document.body.contains(notification)) {
+                notification.remove();
+              }
+            }, 500);
+          }
+        }, 10000);
+        
+        // Reset speaking state since we're not actually speaking yet
+        aiSpeakingIndicator.style.display = 'none';
+        appState.isSpeaking = false;
+      } else {
+        // User has interacted, try to play the audio
+        tryPlayAudio(response.audio, aiSpeakingIndicator);
+      }
     } else {
       // If speech synthesis fails, update UI
       aiSpeakingIndicator.style.display = 'none';
@@ -697,6 +682,74 @@ async function playAiSpeech(text) {
   }
 }
 
+// Function to attempt playing audio with proper error handling
+function tryPlayAudio(audioSrc, aiSpeakingIndicator) {
+  console.log('Setting up audio element...');
+  const audioElement = document.getElementById('ai-voice');
+  
+  // Reset the audio element
+  audioElement.pause();
+  audioElement.currentTime = 0;
+  
+  // Set event listeners before setting the source
+  audioElement.onplay = () => {
+    console.log('Audio started playing!');
+  };
+  
+  audioElement.onended = () => {
+    console.log('Audio playback ended naturally');
+    aiSpeakingIndicator.style.display = 'none';
+    appState.isSpeaking = false;
+  };
+  
+  // If playback fails, still update the UI
+  audioElement.onerror = (e) => {
+    console.error('Error playing audio:', e);
+    console.error('Audio error code:', audioElement.error ? audioElement.error.code : 'unknown');
+    aiSpeakingIndicator.style.display = 'none';
+    appState.isSpeaking = false;
+  };
+  
+  // Set the src and load it
+  audioElement.src = audioSrc;
+  console.log('Audio source set, loading...');
+  audioElement.load();
+  
+  // Show the speaking indicator
+  aiSpeakingIndicator.style.display = 'flex';
+  appState.isSpeaking = true;
+  
+  // Try playing after a short delay
+  setTimeout(() => {
+    console.log('Attempting to play audio now...');
+    const playPromise = audioElement.play();
+    
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          console.log('Audio playback started successfully!');
+        })
+        .catch(err => {
+          console.error('Error during audio playback:', err);
+          aiSpeakingIndicator.style.display = 'none';
+          appState.isSpeaking = false;
+          
+          // Show user notification about audio issue
+          const notification = document.createElement('div');
+          notification.className = 'notification warning';
+          notification.innerHTML = `<i class="fas fa-volume-mute"></i> Audio playback failed: ${err.message}`;
+          document.body.appendChild(notification);
+          
+          // Remove notification after 5 seconds
+          setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 500);
+          }, 5000);
+        });
+    }
+  }, 100);
+}
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize app
@@ -704,6 +757,22 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Set up input methods (both text and voice)
   setupInputMethods();
+  
+  // Add global click handler to track user interaction for audio autoplay
+  document.addEventListener('click', function() {
+    if (!appState.userInteracted) {
+      console.log('User interaction detected!');
+      appState.userInteracted = true;
+      
+      // If there's pending audio, try to play it now
+      if (appState.pendingAudio) {
+        console.log('Found pending audio, attempting to play it now');
+        const aiSpeakingIndicator = document.getElementById('ai-speaking');
+        tryPlayAudio(appState.pendingAudio, aiSpeakingIndicator);
+        appState.pendingAudio = null;
+      }
+    }
+  });
   
   // Event listeners
   elements.startConversationBtn.addEventListener('click', (e) => {
@@ -725,3 +794,13 @@ document.addEventListener('DOMContentLoaded', () => {
     appState.useGlobalPrompt = elements.globalPromptToggle.checked;
   });
 });
+
+// Function to check and play any pending audio after user interaction
+function checkPendingAudio() {
+  if (appState.userInteracted && appState.pendingAudio) {
+    console.log('Playing pending audio after user interaction');
+    const aiSpeakingIndicator = document.getElementById('ai-speaking');
+    tryPlayAudio(appState.pendingAudio, aiSpeakingIndicator);
+    appState.pendingAudio = null;
+  }
+}
