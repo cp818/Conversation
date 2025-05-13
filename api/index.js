@@ -2,7 +2,6 @@
 const express = require('express');
 const path = require('path');
 const { OpenAI } = require('openai');
-const { Deepgram } = require('@deepgram/sdk');
 const axios = require('axios');
 
 // ElevenLabs requires a different import approach
@@ -100,15 +99,8 @@ if (OPENAI_API_KEY) {
   }
 }
 
-// Initialize Deepgram (only if API key is available)
-let deepgram = null;
-if (DEEPGRAM_API_KEY) {
-  try {
-    deepgram = new Deepgram(DEEPGRAM_API_KEY);
-  } catch (error) {
-    console.error('Error initializing Deepgram:', error);
-  }
-}
+// We're using direct API calls for Deepgram, no SDK initialization needed
+console.log('[INFO] Using direct Deepgram API calls instead of SDK');
 
 // Initialize ElevenLabs (only if API key is available)
 let elevenLabs = null;
