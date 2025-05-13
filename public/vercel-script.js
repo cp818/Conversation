@@ -518,24 +518,49 @@ async function processRecording() {
           body: JSON.stringify({ audio: base64Audio })
         });
         
-        const sttLatency = Date.now() - startTime;
-        appState.latencyMeasurements.stt.push(sttLatency);
-        
-        // Update transcription display
-        if (response.success && response.transcript) {
-          elements.transcriptionDisplay.textContent = response.transcript;
+        // Check if API was successful
+        if (response.success) {
+          const sttLatency = Date.now() - startTime;
+          appState.latencyMeasurements.stt.push(sttLatency);
           
-          // Send message to AI
-          if (response.transcript.trim()) {
-            sendMessage(response.transcript);
+          // Update transcription display
+          if (response.transcript) {
+            elements.transcriptionDisplay.textContent = response.transcript;
+            
+            // Send message to AI
+            if (response.transcript.trim()) {
+              sendMessage(response.transcript);
+            } else {
+              elements.transcriptionDisplay.textContent = 'I didn\'t catch that. Please try again.';
+            }
           } else {
-            elements.transcriptionDisplay.textContent = 'I didn\'t catch that. Please try again.';
+            elements.transcriptionDisplay.textContent = 'Could not understand audio. Please try again.';
           }
         } else {
-          elements.transcriptionDisplay.textContent = 'Could not understand audio. Please try again.';
+          // Handle error from API
+          console.warn('Speech-to-text service returned an error:', response.error);
+          
+          // Display error message or mock transcript if provided
+          if (response.mockTranscript) {
+            elements.transcriptionDisplay.textContent = response.mockTranscript;
+          } else {
+            elements.transcriptionDisplay.textContent = 'Speech recognition service is unavailable. Please use text input instead.';
+          }
+          
+          // Show a notification to the user
+          const notification = document.createElement('div');
+          notification.className = 'notification error';
+          notification.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${response.error || 'Speech recognition unavailable'}`;
+          document.body.appendChild(notification);
+          
+          // Remove notification after 5 seconds
+          setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 500);
+          }, 5000);
         }
       } catch (error) {
-        console.error('Speech-to-text failed:', error);
+        console.error('Speech-to-text request failed:', error);
         elements.transcriptionDisplay.textContent = 'Speech recognition failed. Please try again or use text input.';
       }
     };

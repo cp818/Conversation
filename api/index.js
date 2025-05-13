@@ -164,11 +164,34 @@ app.post('/api/conversation/:id/end', (req, res) => {
 
 // Speech-to-text endpoint
 app.post('/api/speech-to-text', async (req, res) => {
+  console.log('[DEBUG] Speech-to-text request received');
+
+  // Add direct environment variable check
+  console.log('[DEBUG] DEEPGRAM_API_KEY available:', !!process.env.DEEPGRAM_API_KEY);
+
+  // First check if Deepgram is initialized
   if (!deepgram) {
-    return res.status(503).json({
-      success: false,
-      error: 'Speech-to-text service is unavailable'
-    });
+    console.log('[DEBUG] Deepgram client not initialized');
+    
+    // Try to initialize it now if we have the API key
+    if (process.env.DEEPGRAM_API_KEY) {
+      try {
+        console.log('[DEBUG] Attempting to initialize Deepgram now');
+        deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
+        console.log('[DEBUG] Deepgram initialized successfully');
+      } catch (initError) {
+        console.error('[ERROR] Failed to initialize Deepgram:', initError);
+      }
+    }
+    
+    // If still not initialized, return error
+    if (!deepgram) {
+      return res.status(200).json({
+        success: false,
+        error: 'Speech-to-text service is unavailable. Please make sure DEEPGRAM_API_KEY is set in environment variables.',
+        mockTranscript: 'This is a fallback response since speech recognition is unavailable. Please type your message instead.'
+      });
+    }
   }
 
   try {
@@ -182,10 +205,31 @@ app.post('/api/speech-to-text', async (req, res) => {
       });
     }
     
+    console.log('[DEBUG] Audio data received, length:', audio.length);
+    
     // Convert base64 to buffer
-    const audioBuffer = Buffer.from(audio.split(',')[1], 'base64');
+    const audioData = audio.split(',');
+    if (audioData.length < 2) {
+      throw new Error('Invalid audio data format');
+    }
+    
+    const audioBuffer = Buffer.from(audioData[1], 'base64');
+    console.log('[DEBUG] Audio buffer created, size:', audioBuffer.length);
+    
+    // Check if deepgram.transcription.preRecorded exists
+    if (!deepgram.transcription || typeof deepgram.transcription.preRecorded !== 'function') {
+      console.error('[ERROR] deepgram.transcription.preRecorded is not a function');
+      console.log('[DEBUG] Available deepgram methods:', Object.keys(deepgram));
+      
+      if (deepgram.transcription) {
+        console.log('[DEBUG] Available transcription methods:', Object.keys(deepgram.transcription));
+      }
+      
+      throw new Error('Invalid Deepgram SDK configuration');
+    }
     
     // Send to Deepgram for transcription
+    console.log('[DEBUG] Sending audio to Deepgram');
     const response = await deepgram.transcription.preRecorded(
       { buffer: audioBuffer, mimetype: 'audio/webm' },
       { 
@@ -196,8 +240,11 @@ app.post('/api/speech-to-text', async (req, res) => {
       }
     );
     
+    console.log('[DEBUG] Received response from Deepgram');
+    
     // Extract transcript
     const transcript = response.results?.channels[0]?.alternatives[0]?.transcript || '';
+    console.log('[DEBUG] Transcript:', transcript);
     
     res.json({
       success: true,
@@ -206,11 +253,11 @@ app.post('/api/speech-to-text', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error in speech-to-text:', error);
-    res.status(500).json({
+    console.error('[ERROR] Error in speech-to-text:', error);
+    res.status(200).json({
       success: false,
-      error: 'Failed to process audio',
-      details: error.message
+      error: `Failed to process audio: ${error.message}`,
+      mockTranscript: 'Speech recognition failed. Please type your message instead.'
     });
   }
 });
