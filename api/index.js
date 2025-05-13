@@ -302,14 +302,19 @@ app.post('/api/speech-to-text', async (req, res) => {
 app.post('/api/text-to-speech', async (req, res) => {
   console.log('[DEBUG] Text-to-speech request received');
   
+  // Check environment variables directly, with detailed logging
+  console.log('[DEBUG] ELEVENLABS_API_KEY available:', !!process.env.ELEVENLABS_API_KEY);
+  console.log('[DEBUG] ELEVENLABS_VOICE_ID available:', !!process.env.ELEVENLABS_VOICE_ID);
+  console.log('[DEBUG] ELEVENLABS_VOICE_ID value:', process.env.ELEVENLABS_VOICE_ID || 'Not set');
+  
   // Check if ElevenLabs API key is available
   if (!process.env.ELEVENLABS_API_KEY) {
-    console.log('[DEBUG] ELEVENLABS_API_KEY is not set');
+    console.log('[ERROR] ELEVENLABS_API_KEY is not set');
     // Return success with null audio to allow the app to continue without TTS
     return res.json({
       success: true,
       audio: null,
-      message: 'Text-to-speech service is unavailable, continuing without voice'
+      message: 'Text-to-speech service is unavailable (API key not configured), continuing without voice'
     });
   }
 
@@ -324,26 +329,41 @@ app.post('/api/text-to-speech', async (req, res) => {
       });
     }
     
+    // Default voice ID fallback chain
+    const effectiveVoiceId = voiceId || process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL';
+    console.log(`[DEBUG] Using voice ID: ${effectiveVoiceId}`);
+    
     // Generate audio using direct ElevenLabs API
     const options = {
-      voiceId: voiceId || process.env.ELEVENLABS_VOICE_ID
+      voiceId: effectiveVoiceId
     };
     
     // Get audio via direct API
+    console.log('[DEBUG] Calling elevenLabsApiHelper.generateSpeech...');
     const audioBuffer = await elevenLabsApiHelper.generateSpeech(text, options);
     
-    console.log('[DEBUG] Successfully received audio response from ElevenLabs');
+    console.log('[DEBUG] Successfully received audio response from ElevenLabs, size:', audioBuffer.length);
     
     // Convert the audio to base64
     const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+    console.log('[DEBUG] Converted audio to base64, length:', audioBase64.length);
     
+    // Send the response
+    console.log('[DEBUG] Sending audio response to client');
     res.json({
       success: true,
       audio: `data:audio/mp3;base64,${audioBase64}`
     });
+    console.log('[DEBUG] Response sent successfully');
     
   } catch (error) {
     console.error('[ERROR] Error in text-to-speech:', error);
+    if (error.response) {
+      console.error('[ERROR] ElevenLabs API response status:', error.response.status);
+      console.error('[ERROR] ElevenLabs API response data:', 
+        typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data));
+    }
+    
     // Return success with null audio to allow the app to continue without TTS
     res.json({
       success: true,

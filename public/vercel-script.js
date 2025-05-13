@@ -573,6 +573,8 @@ async function processRecording() {
 async function playAiSpeech(text) {
   if (!text.trim() || appState.isSpeaking) return;
   
+  console.log('Attempting to play AI speech for text:', text.substring(0, 50) + '...');
+  
   try {
     // Update UI to show that AI is speaking
     const aiSpeakingIndicator = document.getElementById('ai-speaking');
@@ -582,29 +584,36 @@ async function playAiSpeech(text) {
     const startTime = Date.now();
     
     // Get speech audio from API
+    console.log('Sending request to text-to-speech API...');
     const response = await fetchWithErrorHandling('/api/text-to-speech', {
       method: 'POST',
       body: JSON.stringify({ text })
     });
     
+    console.log('Received response from text-to-speech API:', response);
+    
     const ttsLatency = Date.now() - startTime;
     appState.latencyMeasurements.tts.push(ttsLatency);
     
     if (response.success && response.audio) {
+      console.log('Successfully received audio data, length:', response.audio.length);
+      
       // Play the audio
       const audioElement = document.getElementById('ai-voice');
       audioElement.src = response.audio;
       
       // Play and handle completion
+      console.log('Playing audio...');
       audioElement.play();
       audioElement.onended = () => {
+        console.log('Audio playback ended');
         aiSpeakingIndicator.style.display = 'none';
         appState.isSpeaking = false;
       };
       
       // If playback fails, still update the UI
-      audioElement.onerror = () => {
-        console.error('Error playing audio');
+      audioElement.onerror = (e) => {
+        console.error('Error playing audio:', e);
         aiSpeakingIndicator.style.display = 'none';
         appState.isSpeaking = false;
       };
@@ -612,13 +621,37 @@ async function playAiSpeech(text) {
       // If speech synthesis fails, update UI
       aiSpeakingIndicator.style.display = 'none';
       appState.isSpeaking = false;
-      console.error('Failed to get speech audio');
+      console.error('Failed to get speech audio', response.message || '', response.error || '');
+      
+      // Show an error notification
+      const notification = document.createElement('div');
+      notification.className = 'notification warning';
+      notification.innerHTML = `<i class="fas fa-volume-mute"></i> ${response.message || 'Text-to-speech unavailable'}`;
+      document.body.appendChild(notification);
+      
+      // Remove notification after 5 seconds
+      setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 500);
+      }, 5000);
     }
   } catch (error) {
     // Reset speaking state on error
     document.getElementById('ai-speaking').style.display = 'none';
     appState.isSpeaking = false;
     console.error('Error playing AI speech:', error);
+    
+    // Show an error notification
+    const notification = document.createElement('div');
+    notification.className = 'notification error';
+    notification.innerHTML = `<i class="fas fa-exclamation-circle"></i> Error with speech synthesis: ${error.message}`;
+    document.body.appendChild(notification);
+    
+    // Remove notification after 5 seconds
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      setTimeout(() => notification.remove(), 500);
+    }, 5000);
   }
 }
 
