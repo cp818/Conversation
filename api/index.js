@@ -3,12 +3,36 @@ const express = require('express');
 const path = require('path');
 const { OpenAI } = require('openai');
 const { Deepgram } = require('@deepgram/sdk');
-const { ElevenLabs } = require('elevenlabs-node');
 const axios = require('axios');
+
+// ElevenLabs requires a different import approach
+let ElevenLabs;
+try {
+  ElevenLabs = require('elevenlabs');
+} catch (error) {
+  console.error('Error importing ElevenLabs:', error);
+  ElevenLabs = null;
+}
 
 // Initialize Express app
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+
+// Debug logging middleware
+app.use((req, res, next) => {
+  console.log(`[DEBUG] ${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(`[ERROR] ${err.stack}`);
+  res.status(500).json({
+    success: false,
+    error: 'Server error',
+    debug: process.env.NODE_ENV !== 'production' ? err.message : undefined
+  });
+});
 
 // Api handlers
 app.get('/api/health', (req, res) => {
@@ -46,11 +70,12 @@ if (DEEPGRAM_API_KEY) {
 
 // Initialize ElevenLabs (only if API key is available)
 let elevenLabs = null;
-if (ELEVENLABS_API_KEY) {
+if (ELEVENLABS_API_KEY && ElevenLabs) {
   try {
     elevenLabs = new ElevenLabs({
       apiKey: ELEVENLABS_API_KEY
     });
+    console.log('ElevenLabs initialized successfully');
   } catch (error) {
     console.error('Error initializing ElevenLabs:', error);
   }
@@ -192,15 +217,22 @@ app.post('/api/speech-to-text', async (req, res) => {
 
 // Text-to-speech endpoint
 app.post('/api/text-to-speech', async (req, res) => {
+  console.log('[DEBUG] Text-to-speech request received');
+  
+  // Check if ElevenLabs is available
   if (!elevenLabs) {
-    return res.status(503).json({
-      success: false,
-      error: 'Text-to-speech service is unavailable'
+    console.log('[DEBUG] ElevenLabs service is not initialized');
+    // Return success with null audio to allow the app to continue without TTS
+    return res.json({
+      success: true,
+      audio: null,
+      message: 'Text-to-speech service is unavailable, continuing without voice'
     });
   }
 
   try {
     const { text, voiceId = ELEVENLABS_VOICE_ID } = req.body;
+    console.log(`[DEBUG] Processing TTS request for text: "${text.substring(0, 50)}..."`);
     
     if (!text) {
       return res.status(400).json({
@@ -210,6 +242,14 @@ app.post('/api/text-to-speech', async (req, res) => {
     }
     
     // Generate audio using ElevenLabs
+    console.log(`[DEBUG] Using voice ID: ${voiceId}`);
+    
+    // Check method availability
+    if (typeof elevenLabs.textToSpeech !== 'function') {
+      console.error('[ERROR] elevenLabs.textToSpeech is not a function. Available methods:', Object.keys(elevenLabs));
+      throw new Error('Invalid ElevenLabs SDK configuration');
+    }
+    
     const audioResponse = await elevenLabs.textToSpeech({
       voice_id: voiceId,
       text,
@@ -220,6 +260,8 @@ app.post('/api/text-to-speech', async (req, res) => {
       }
     });
     
+    console.log('[DEBUG] Successfully received audio response from ElevenLabs');
+    
     // Convert the audio to base64
     const audioBase64 = Buffer.from(audioResponse).toString('base64');
     
@@ -229,11 +271,13 @@ app.post('/api/text-to-speech', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error in text-to-speech:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate speech',
-      details: error.message
+    console.error('[ERROR] Error in text-to-speech:', error);
+    // Return success with null audio to allow the app to continue without TTS
+    res.json({
+      success: true,
+      audio: null,
+      message: 'Text-to-speech failed, continuing without voice',
+      error: error.message
     });
   }
 });

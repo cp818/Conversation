@@ -1,12 +1,12 @@
 {
   "name": "emma-ai-demo",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node api/index.js",
     "basic": "node basic-server.js",
     "prod": "node production-server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon api/index.js"
   },
   "keywords": [
     "emma-ai",
